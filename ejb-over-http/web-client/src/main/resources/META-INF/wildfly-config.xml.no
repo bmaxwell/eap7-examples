@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<configuration>
+  <authentication-client xmlns="urn:elytron:1.0">
+    <authentication-rules>
+      <rule use-configuration="default"/>
+    </authentication-rules>
+    <authentication-configurations>
+      <configuration name="default">
+        <sasl-mechanism-selector selector="DIGEST-MD5"/>
+        <set-user-name name="webuser"/>
+        <credentials>
+          <clear-password password="redhat1!"/>
+        </credentials>
+      </configuration>
+    </authentication-configurations>
+  </authentication-client>
+</configuration>
