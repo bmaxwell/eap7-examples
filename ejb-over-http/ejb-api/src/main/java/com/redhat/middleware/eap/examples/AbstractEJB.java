@@ -36,6 +36,8 @@ public abstract class AbstractEJB implements HelloRemote {
 
     private Logger log = Logger.getLogger(this.getClass().getSimpleName());
 
+    private static boolean logging = true;
+
     @Resource
     private SessionContext ctx;
 
@@ -46,7 +48,14 @@ public abstract class AbstractEJB implements HelloRemote {
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public String hello() {
         String response = String.format("hello() %s invoked on %s transaction key: %s", (ctx.getCallerPrincipal() == null ? "null" : ctx.getCallerPrincipal().getName()), NODE_NAME, tsr.getTransactionKey());
-        log.info(response);
+
+        if(logging)
+            log.info(response);
         return response;
+    }
+
+    @Override
+    public void setLogging(boolean isLogging) {
+        logging = isLogging;
     }
 }

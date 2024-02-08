@@ -16,67 +16,92 @@
     limitations under the License.
 -->
 <html xmlns="http://www.w3.org/1999/xhtml"
-   xmlns:h="http://java.sun.com/jsf/html"
-   xmlns:ui="http://java.sun.com/jsf/facelets">
+	xmlns:h="http://java.sun.com/jsf/html"
+	xmlns:f="http://xmlns.jcp.org/jsf/core"
+	xmlns:ui="http://java.sun.com/jsf/facelets">
 <h:head>
-   <title>hibernate</title>
-   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<title>hibernate</title>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 </h:head>
 <h:body>
 
-		<h1>Welcome to JBoss!</h1>
+	<h1>Welcome to JBoss!</h1>
 
-		<div>
-			<p>You have successfully deployed a Jakarta EE web application.</p>
-		</div>
+	<div>
+		<p>You have successfully deployed a Jakarta EE web application.</p>
+	</div>
 
-		<h:form id="reg">
+	<h:form id="form">
 
-			<h2>JSF</h2>
+		<h2>JSF</h2>
 
-			<h:panelGrid columns="2" columnClasses="titleCell">
+		<h:panelGrid columns="2" columnClasses="titleCell">
 
+			<h:outputLabel for="ejbLookup" value="EJB Lookup:" />
+			<h:inputText id="ejbLookup"
+				value="#{controller.testConfig.ejbLookup}" />
 
-				<h:outputLabel for="ejbLookup" value="EJB Lookup:" />
-				<h:inputText id="ejbLookup"
-					value="#{controller.testConfig.ejbLookup}" />
+			<h:outputLabel for="serverHost" value="ServerHost:" />
+			<h:inputText id="serverHost"
+				value="#{controller.testConfig.server.host}" />
 
-				<h:outputLabel for="serverHost" value="ServerHost:" />
-				<h:inputText id="serverHost"
-					value="#{controller.testConfig.server.host}" />
+			<h:outputLabel for="serverPort" value="ServerPort:" />
+			<h:inputText id="serverPort"
+				value="#{controller.testConfig.server.port}" />
 
-				<h:outputLabel for="serverPort" value="ServerPort:" />
-				<h:inputText id="serverPort"
-					value="#{controller.testConfig.server.port}" />
+			<h:outputLabel for="serverUsername" value="ServerUsername:" />
+			<h:inputText id="serverUsername"
+				value="#{controller.testConfig.server.username}" />
 
-				<h:outputLabel for="serverUsername" value="ServerUsername:" />
-				<h:inputText id="serverUsername"
-					value="#{controller.testConfig.server.username}" />
+			<h:outputLabel for="serverPassword" value="ServerPassword:" />
+			<h:inputText id="serverPassword"
+				value="#{controller.testConfig.server.password}" />
 
-				<h:outputLabel for="serverPassword" value="ServerPassword:" />
-				<h:inputText id="serverPassword"
-					value="#{controller.testConfig.server.password}" />
+			<h:outputLabel for="numThreads" value="Number of threads:" />
+			<h:inputText id="numThreads"
+				value="#{controller.testConfig.numThreads}" />
 
-				<h:outputLabel for="numThreads"
-					value="Number of threads:" />
-				<h:inputText id="numThreads"
-					value="#{controller.testConfig.numThreads}" />
-					
-				<h:outputLabel for="numInvocations"
-					value="Number of invokcations (0 to continue until stopped):" />
-				<h:inputText id="numInvocations"
-					value="#{controller.testConfig.numInvocations}" />
+			<h:outputLabel for="numInvocations"
+				value="Number of invocations (0 to continue until stopped):" />
+			<h:inputText id="numInvocations"
+				value="#{controller.testConfig.numInvocations}" />
 
-				<h:commandButton value="Invoke" action="#{controller.invoke}" /><br/>
-				<h:commandButton value="Stop Running" action="#{controller.stopRunning}" /><br/>
-				<h:commandButton value="Check Running" action="#{controller.checkRunning}" />
+			<h:panelGrid id="statusPanel" layout="block" columns="1">
+				<h:panelGroup>
+					<h:outputText value="Test: " />
+					<h:commandButton value="#{controller.runnableToggle.label}"
+						action="#{controller.toggleStartStop}"
+						disabled="#{controller.runnableToggle.disabled}" />
+				</h:panelGroup>
+				<h:outputText id="status" value="Status: #{controller.status}" />
 			</h:panelGrid>
+		</h:panelGrid>
 
-			<h:panelGrid columns="1">
-				<h:outputText value="Response: #{controller.response}" />
-			</h:panelGrid>
+		<h:panelGrid columns="1">
+			<h:outputText value="Enable / Disable Logging" />
+			<h:panelGroup id="weblogger">
+				<h:outputText value="Web Logger:" />
+				<h:commandButton value="#{controller.webLogger.label}"
+					action="#{controller.webLogger.toggle}">
+					<f:ajax render=":form:weblogger" />
+				</h:commandButton>
+			</h:panelGroup>
+			<h:panelGroup id="ejblogger">
+				<h:outputText value="EJB Logger: " />
+				<h:commandButton value="#{controller.ejbLogger.label}"
+					action="#{controller.ejbLogger.toggle}">
+					<f:ajax render=":form:ejblogger" />
+				</h:commandButton>
+			</h:panelGroup>
+		</h:panelGrid>
 
-		</h:form>
+		<h:panelGrid columns="1">
+			<h:outputText value="Response: #{controller.response}" />
+		</h:panelGrid>
 
+		<f:websocket channel="push" scope="view">
+			<f:ajax event="status" render=":form:statusPanel" />
+		</f:websocket>
+	</h:form>
 </h:body>
 </html>

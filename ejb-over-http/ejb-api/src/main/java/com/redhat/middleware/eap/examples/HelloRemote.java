@@ -7,4 +7,6 @@ public interface HelloRemote {
 
     public String hello();
 
+    public void setLogging(boolean isLogging);
+
 }

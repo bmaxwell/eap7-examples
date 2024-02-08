@@ -23,11 +23,18 @@ import java.util.List;
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import javax.enterprise.concurrent.ManagedThreadFactory;
-import javax.enterprise.context.SessionScoped;
 import javax.enterprise.inject.Model;
 import javax.faces.context.FacesContext;
+import javax.faces.push.Push;
+import javax.faces.push.PushContext;
+import javax.faces.view.ViewScoped;
 import javax.inject.Inject;
 
+import org.jboss.as.quickstart.jsf.model.LoggerToggle;
+import org.jboss.as.quickstart.jsf.model.LoggerToggle.ToggleEvent;
+import org.jboss.as.quickstart.jsf.model.RunnableToggle;
+import org.jboss.as.quickstart.jsf.model.RunnableToggle.Status;
+import org.jboss.as.quickstart.jsf.model.RunnableToggle.StatusChangeEvent;
 import org.jboss.as.quickstart.jsf.model.TestConfig;
 import org.jboss.logging.Logger;
 
@@ -37,11 +44,11 @@ import com.redhat.middleware.eap.examples.HelloRemote;
 /**
  * The @Model stereotype is a convenience mechanism to make this a request-scoped bean that has an EL name
  */
-@SessionScoped
+@ViewScoped
 @Model
 public class Controller implements Serializable {
 
-    private Logger log = Logger.getLogger("Controller");
+    private Logger logger = Logger.getLogger("Controller");
 
     @Inject
     private FacesContext facesContext;
@@ -49,28 +56,81 @@ public class Controller implements Serializable {
     @Resource
     private ManagedThreadFactory managedThreadFactory;
 
+    @Inject
+    @Push
+    private PushContext push;
+
     private TestConfig testConfig = new TestConfig();
     private String response;
+    private String status;
+    // private boolean running = false;
+    private RunnableToggle runnableToggle = new RunnableToggle("TestRunning");
 
+    private StatusRunnable statusRunnable;
+    private Thread statusThread;
+    private int statusCheckInterval = 5; // seconds
     private List<Thread> threads = null;
     private List<InvocationRunnable> invocationRunnables = null;
 
+    private LoggerToggle webLogger = new LoggerToggle("WebLogger");
+    private LoggerToggle ejbLogger = new LoggerToggle("EJBLogger");
+
     @PostConstruct
     public void init() {
+        runnableToggle.setPostCallback(new StatusChangeEvent() {
+            @Override
+            public void statusChange(Status newValue) throws Exception {
+                pushUpdate();
+            }
+        });
     }
 
     public String getResponse() {
         return response;
     }
 
+    private static class StatusRunnable implements Runnable {
+
+        private static final Logger logger = Logger.getLogger("StatusThread");
+        private boolean running = true;
+        private Controller controller;
+        private int interval = 5;
+
+        StatusRunnable(Controller controller, int statusCheckInterval) {
+            this.controller = controller;
+            this.interval = statusCheckInterval;
+        }
+
+        @Override
+        public void run() {
+            logger.info("initialized");
+
+            while (running) {
+                try {
+                    controller.pushUpdate();
+                    Thread.sleep(interval * 1000);
+                } catch (InterruptedException ie) {
+                }
+            }
+        }
+
+        public void stop() {
+            controller.pushUpdate();
+            this.running = false;
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static class InvocationRunnable implements Runnable {
 
         private Logger logger = Logger.getLogger("InvocationRunnable");
         private TestConfig testConfig;
+        private Controller controller;
         private long invocation = 0L;
         private boolean running = true;
 
-        public InvocationRunnable(TestConfig testConfig) {
+        public InvocationRunnable(Controller controller, TestConfig testConfig) {
+            this.controller = controller;
             this.testConfig = testConfig;
         }
 
@@ -93,7 +153,8 @@ public class Controller implements Serializable {
                         response = String.format("%s: %s", t.getClass().getName(), t.getMessage());
                     }
 
-                    logger.infof("%s invocation=%d %s %s", threadName, invocation, configInfo, response);
+                    if (controller.getWebLogger().isLogging())
+                        logger.infof("%s invocation=%d %s %s", threadName, invocation, configInfo, response);
                 }
             } else {
                 // run for the number of invocations
@@ -106,7 +167,8 @@ public class Controller implements Serializable {
                         t.printStackTrace();
                         response = String.format("%s: %s", t.getClass().getName(), t.getMessage());
                     }
-                    logger.infof("%s invocation=%d %s %s", threadName, invocation, configInfo, response);
+                    if (controller.getWebLogger().isLogging())
+                        logger.infof("%s invocation=%d %s %s", threadName, invocation, configInfo, response);
                 }
             }
         }
@@ -120,15 +182,41 @@ public class Controller implements Serializable {
         }
     }
 
-    public String invoke() {
+    public String toggleStartStop() {
+        // disabled if Starting or Stopping, so do nothing
+        // else call start or stop
+        if (!runnableToggle.isDisabled()) {
+            if (runnableToggle.isRunning())
+                stop();
+            else if (runnableToggle.isStopped())
+                start();
+        }
+        return "";
+    }
 
-        if (threads == null) {
+    public String start() {
+
+        if (runnableToggle.isStopped() && threads == null) {
             // not currently running test
+
+            runnableToggle.starting();
+
+            // set the callback on the ejblogger , this is done when invoke is called in case the host/port changes
+            ejbLogger.setCallback(new ToggleEvent() {
+
+                @Override
+                public void toggle(boolean newValue) throws Exception {
+                    // try to call the ejb to change the logging value, if it fails then throw an exception so the LoggerToggle
+                    // will not toggle values
+                    EJBClientUtil.getEJBRemote(testConfig.getServer(), testConfig.getEjbLookup()).setLogging(newValue);
+                }
+            });
+
             threads = new ArrayList<Thread>();
             invocationRunnables = new ArrayList<Controller.InvocationRunnable>();
             // create threads
             for (int i = 0; i < testConfig.getNumThreads(); i++) {
-                InvocationRunnable runnable = new InvocationRunnable(testConfig);
+                InvocationRunnable runnable = new InvocationRunnable(this, testConfig);
                 invocationRunnables.add(runnable);
                 Thread thread = managedThreadFactory.newThread(runnable);
                 thread.setName(String.format("InvocationRunnables-%d", i));
@@ -138,28 +226,35 @@ public class Controller implements Serializable {
             // start threads
             threads.forEach(t -> t.start());
 
+            // start the status thread
+            this.statusRunnable = new StatusRunnable(this, statusCheckInterval);
+            this.statusThread = managedThreadFactory.newThread(this.statusRunnable);
+            this.statusThread.start();
+
             response = String.format("Started threads: %s", testConfig);
+            runnableToggle.started();
+
         } else {
             // already / still running
-            checkRunning();
             response = String.format("Already running test with: %s", testConfig);
         }
 
         return "";
     }
 
-    public String stopRunning() {
+    public String stop() {
         if (invocationRunnables != null) {
+
+            runnableToggle.stopping();
             invocationRunnables.forEach(r -> r.setRunning(false));
-            checkRunning();
+
         } else {
             response = "no threads running";
         }
         return "";
     }
 
-    public String checkRunning() {
-
+    private String checkThreadStatus() {
         if (threads != null) {
             Integer alive = 0;
             for (int i = 0; i < threads.size(); i++) {
@@ -168,17 +263,24 @@ public class Controller implements Serializable {
             }
 
             // if none alive, then clear out the lists
-            if(alive < 1) {
+            if (alive < 1) {
                 threads = null;
                 invocationRunnables = null;
+                this.statusRunnable.stop();
+                this.statusThread = null;
+                runnableToggle.stopped();
             }
 
-            response = String.format("%d threads alive and running", alive);
+            return String.format("%d threads alive and running", alive);
         } else {
-            response = "no threads running";
+            return "no threads running";
         }
+    }
 
-        return "";
+    private void pushUpdate() {
+        this.status = checkThreadStatus();
+        logger.info("status: " + this.status);
+        push.send("status");
     }
 
     private String getRootErrorMessage(Exception e) {
@@ -206,5 +308,29 @@ public class Controller implements Serializable {
 
     public void setTestConfig(TestConfig testConfig) {
         this.testConfig = testConfig;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public LoggerToggle getWebLogger() {
+        return webLogger;
+    }
+
+    public LoggerToggle getEjbLogger() {
+        return ejbLogger;
+    }
+
+    public RunnableToggle getRunnableToggle() {
+        return runnableToggle;
+    }
+
+    private static void sleep() {
+        try {
+            Thread.sleep(5000);
+        } catch (Exception e) {
+
+        }
     }
 }

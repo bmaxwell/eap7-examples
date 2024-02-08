@@ -7,4 +7,5 @@ public interface HelloLocal {
 
     public String hello();
 
+    public void setLogging(boolean isLogging);
 }
